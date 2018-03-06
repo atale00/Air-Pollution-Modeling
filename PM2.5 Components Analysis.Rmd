@@ -1,0 +1,388 @@
+---
+title: "Components"
+author: "Xinyi Liu"
+date: "2017年12月25日"
+output: html_document
+---
+
+1. Data preparation
+```{r,echo=T}
+options(warn=-1)
+library(readr)
+library(dummies)
+library(corrplot)
+library(plyr)
+library(ggplot2)
+library(leaps)
+library(caret)
+library(mlbench)
+library(randomForest)
+library(xgboost)
+library(glmnet)
+library(boot)
+library(readxl)
+library(dplyr)
+library(tidyr)
+
+sheet1 <- read_excel("E:/实习/2014(w com).xlsx",sheet='1')
+sheet1new = sheet1 %>%
+   separate(Time, c("date", "time"), " ")
+sheet2 <- read_excel("E:/实习/2014(w com).xlsx", 
+    sheet = "2")
+sheet2=sheet2[-745,]
+com14=cbind(sheet1new,sheet2[,2:13])
+
+newdata=com14[,-1][,-1][,-12][,-12][,-12][,-6][,-11]
+```
+
+We have optimized data, now let's begin with analysis for HNO2.
+
+2. HNO2
+```{r,echo=TRUE}
+hno2d=cbind(sheet1new[,-1][,-1][,-1][,-5][,-10][,-10][,-10],sheet2$HNO2)
+hno2d$HNO2=sheet2$HNO2
+hno2d=hno2d[,-10][,-3][,-3][,-3]
+data1 <- na.omit(hno2d)
+summary(data1)
+sapply(data1,class)
+```
+
+
+i. Forward Selection
+```{r,echo=True}
+regfit.fwd=regsubsets(HNO2~.,data=data1,nvmax=6,method="forward")
+regsum=summary(regfit.fwd)
+
+#cross-validation
+library(ISLR)
+library(knitr)
+predict.regsubsets=function(object,newdata,id,...){
+	form=as.formula(object$call[[2]])
+	mat=model.matrix(form,newdata)
+	coefi=coef(object,id=id)
+	xvars=names(coefi)
+	mat[,xvars]%*%coefi
+}
+k=10
+set.seed(1)
+folds=sample(1:k,nrow(data1),replace=TRUE)
+cv.errors=matrix(NA,k,6,dimnames=list(NULL,paste(1:6)))
+
+for(j in 1:k){
+	best.fit=regsubsets(HNO2~.,data=data1[folds!=j,],nvmax=6,method='forward')
+	for(i in 1:6){
+		pred=predict.regsubsets(best.fit,data1[folds==j,],id=i)
+		cv.errors[j,i]=mean((data1$HNO2[folds==j]-pred)^2)
+	}
+}
+
+mean.cv.errors=apply(cv.errors,2,mean)
+which.min(mean.cv.errors)
+
+#We see that cross-validation selects an 4-variable model.
+
+regfit.fwd=regsubsets(HNO2~.,data=data1,nvmax=4,method="forward")
+regsum=summary(regfit.fwd)
+fwdco=coef(regfit.fwd,4)
+sort(abs(fwdco), decreasing=T)
+
+
+```
+From the result above, we selected a 4-variable model containing WS, RH, NO2, SO2.
+
+ii. Lasso Regression
+```{r,echo=TRUE}
+x=as.matrix(data1[, 1:6])
+cv.lasso <- cv.glmnet(x, y=as.matrix(data1$HNO2), family='gaussian', alpha=1, standardize=TRUE, type.measure='mse')
+bestlam=cv.lasso$lambda.min
+lasso.mod=glmnet(x, y=as.matrix(data1$HNO2),alpha=1,lambda=0.01,family='gaussian',standardize=TRUE)
+lasso.coef=coef(lasso.mod)[,1]
+lasso.coef[lasso.coef!=0]
+sort(abs(lasso.coef), decreasing=T)
+```
+From the result above, Lasso has selected WS, RH, Temp, SO2, NO2, WD for us. 
+
+
+
+
+
+
+3. NO3
+```{r,echo=TRUE}
+no3d=cbind(sheet1new[,-1][,-1][,-1][,-5][,-10][,-10][,-10],sheet2$NO3)
+no3d$NO3=sheet2$NO3
+no3d=no3d[,-10][,-3][,-3][,-3]
+data2 <- na.omit(no3d)
+summary(data2)
+sapply(data2,class)
+```
+
+
+i. Forward Selection
+```{r,echo=True}
+regfit.fwd=regsubsets(NO3~.,data=data2,nvmax=6,method="forward")
+regsum=summary(regfit.fwd)
+
+#cross-validation
+predict.regsubsets=function(object,newdata,id,...){
+	form=as.formula(object$call[[2]])
+	mat=model.matrix(form,newdata)
+	coefi=coef(object,id=id)
+	xvars=names(coefi)
+	mat[,xvars]%*%coefi
+}
+k=10
+set.seed(1)
+folds=sample(1:k,nrow(data2),replace=TRUE)
+cv.errors=matrix(NA,k,6,dimnames=list(NULL,paste(1:6)))
+
+for(j in 1:k){
+	best.fit=regsubsets(NO3~.,data=data2[folds!=j,],nvmax=6,method='forward')
+	for(i in 1:6){
+		pred=predict.regsubsets(best.fit,data2[folds==j,],id=i)
+		cv.errors[j,i]=mean((data2$NO3[folds==j]-pred)^2)
+	}
+}
+
+mean.cv.errors=apply(cv.errors,2,mean)
+which.min(mean.cv.errors)
+
+#We see that cross-validation selects an 5-variable model.
+
+regfit.fwd=regsubsets(NO3~.,data=data2,nvmax=5,method="forward")
+regsum=summary(regfit.fwd)
+fwdco=coef(regfit.fwd,5)
+sort(abs(fwdco), decreasing=T)
+
+
+```
+From the result above, we selected a 5-variable model containing Temp, WS, SO2, RH, WD.
+
+ii. Lasso Regression
+```{r,echo=TRUE}
+x=as.matrix(data2[, 1:6])
+cv.lasso <- cv.glmnet(x, y=as.matrix(data2$NO3), family='gaussian', alpha=1, standardize=TRUE, type.measure='mse')
+bestlam=cv.lasso$lambda.min
+lasso.mod=glmnet(x, y=as.matrix(data2$NO3),alpha=1,lambda=0.01,family='gaussian',standardize=TRUE)
+lasso.coef=coef(lasso.mod)[,1]
+lasso.coef[lasso.coef!=0]
+sort(abs(lasso.coef), decreasing=T)
+```
+From the result above, Lasso has selected Temp, WS, SO2, RH, NO2, WD for us. 
+
+4. SO4
+```{r,echo=TRUE}
+so4d=cbind(sheet1new[,-1][,-1][,-1][,-5][,-10][,-10][,-10],sheet2$SO4)
+so4d$SO4=sheet2$SO4
+so4d=so4d[,-10][,-3][,-3][,-3]
+data3 <- na.omit(so4d)
+summary(data3)
+sapply(data3,class)
+
+cor(data3$SO2,data3$SO4)
+cor(data3$Temp,data3$RH)
+ccc=cov(data3$Temp,data3$RH)
+aaa=var(data3$Temp)*var(data3$RH)
+ccc/sqrt(aaa)
+
+t.test(data3)
+
+newso4=cbind(sheet1new[,1],so4d)
+newso41=na.omit(newso4)[,-3][,-3][,-3][,-3][,-3]
+
+attach(newso41)
+library(xlsx)
+write.table(newso41, "E:/newso41.csv")
+
+22  22  23  23  23
+#23 22 23 23 23
+#22 22 22 4 3 
+#0 0 0 2 11
+#0 0 4 3 0 12
+d1=newso41[1:16,]
+d2=newso41[17:32,]
+d3=newso41[33:39,]
+d4=newso41[40:62,]
+d5=newso41[63:84,]
+d6=newso41[85:106,]
+d7=newso41[107:129,]
+d8=newso41[130:152,]
+d9=newso41[153:175,]
+d10=newso41[176:198,]
+
+d11=newso41[199:220,]
+d12=newso41[221:243,]
+d13=newso41[244:266,]
+d14=newso41[267:289,]
+d15=newso41[290:311,]
+d16=newso41[312:333,]
+d17=newso41[334:355,]
+d18=newso41[356:377,]
+
+r1=cbind(mean(d1$SO2),mean(d1$SO4))
+r2=cbind(mean(d2$SO2),mean(d2$SO4))
+r3=cbind(mean(d3$SO2),mean(d3$SO4))
+r4=cbind(mean(d4$SO2),mean(d4$SO4))
+r5=cbind(mean(d5$SO2),mean(d5$SO4))
+r6=cbind(mean(d6$SO2),mean(d6$SO4))
+r7=cbind(mean(d7$SO2),mean(d7$SO4))
+r8=cbind(mean(d8$SO2),mean(d8$SO4))
+r9=cbind(mean(d9$SO2),mean(d9$SO4))
+r10=cbind(mean(d10$SO2),mean(d10$SO4))
+r11=cbind(mean(d11$SO2),mean(d11$SO4))
+r12=cbind(mean(d12$SO2),mean(d12$SO4))
+r13=cbind(mean(d13$SO2),mean(d13$SO4))
+r14=cbind(mean(d14$SO2),mean(d14$SO4))
+r15=cbind(mean(d15$SO2),mean(d15$SO4))
+r16=cbind(mean(d16$SO2),mean(d16$SO4))
+r17=cbind(mean(d17$SO2),mean(d17$SO4))
+r18=cbind(mean(d18$SO2),mean(d18$SO4))
+
+daydata=rbind(r1,r2,r3,r4,r5,r6,r7,r8,r9,r10,r11,r12,r13,r14,r15,r16,r17,r18)
+daydata1=as.data.frame(daydata)
+library(reshape)
+daydata1<-rename(daydata1,c(V1="SO2",V2="SO4")) 
+cor(daydata1$SO2,daydata1$SO4)
+
+```
+
+
+i. Forward Selection
+```{r,echo=True}
+regfit.fwd=regsubsets(SO4~.,data=data3,nvmax=6,method="forward")
+regsum=summary(regfit.fwd)
+
+#cross-validation
+predict.regsubsets=function(object,newdata,id,...){
+	form=as.formula(object$call[[2]])
+	mat=model.matrix(form,newdata)
+	coefi=coef(object,id=id)
+	xvars=names(coefi)
+	mat[,xvars]%*%coefi
+}
+k=10
+set.seed(1)
+folds=sample(1:k,nrow(data3),replace=TRUE)
+cv.errors=matrix(NA,k,6,dimnames=list(NULL,paste(1:6)))
+
+for(j in 1:k){
+	best.fit=regsubsets(SO4~.,data=data3[folds!=j,],nvmax=6,method='forward')
+	for(i in 1:6){
+		pred=predict.regsubsets(best.fit,data3[folds==j,],id=i)
+		cv.errors[j,i]=mean((data3$SO4[folds==j]-pred)^2)
+	}
+}
+
+mean.cv.errors=apply(cv.errors,2,mean)
+which.min(mean.cv.errors)
+
+#We see that cross-validation selects an 5-variable model.
+
+regfit.fwd=regsubsets(SO4~.,data=data3,nvmax=5,method="forward")
+regsum=summary(regfit.fwd)
+fwdco=coef(regfit.fwd,5)
+sort(abs(fwdco), decreasing=T)
+
+
+```
+From the result above, we selected a 5-variable model containing WS, Temp, RH, SO2, NO2.
+
+ii. Lasso Regression
+```{r,echo=TRUE}
+x=as.matrix(data3[, 1:6])
+cv.lasso <- cv.glmnet(x, y=as.matrix(data3$SO4), family='gaussian', alpha=1, standardize=TRUE, type.measure='mse')
+bestlam=cv.lasso$lambda.min
+lasso.mod=glmnet(x, y=as.matrix(data3$SO4),alpha=1,lambda=0.01,family='gaussian',standardize=TRUE)
+lasso.coef=coef(lasso.mod)[,1]
+lasso.coef[lasso.coef!=0]
+sort(abs(lasso.coef), decreasing=T)
+```
+From the result above, Lasso has selected WS, Temp, RH, SO2, NO2, WD for us. 
+
+
+
+
+
+
+5. NH4
+```{r,echo=TRUE}
+nh4d=cbind(sheet1new[,-1][,-1][,-1][,-5][,-10][,-10][,-10],sheet2$NH4)
+nh4d$NH4=sheet2$NH4
+nh4d=nh4d[,-10][,-3][,-3][,-3]
+data4 <- na.omit(nh4d)
+summary(data4)
+sapply(data4,class)
+```
+
+
+i. Forward Selection
+```{r,echo=True}
+regfit.fwd=regsubsets(NH4~.,data=data4,nvmax=6,method="forward")
+regsum=summary(regfit.fwd)
+
+#cross-validation
+predict.regsubsets=function(object,newdata,id,...){
+	form=as.formula(object$call[[2]])
+	mat=model.matrix(form,newdata)
+	coefi=coef(object,id=id)
+	xvars=names(coefi)
+	mat[,xvars]%*%coefi
+}
+k=10
+set.seed(1)
+folds=sample(1:k,nrow(data4),replace=TRUE)
+cv.errors=matrix(NA,k,6,dimnames=list(NULL,paste(1:6)))
+
+for(j in 1:k){
+	best.fit=regsubsets(NH4~.,data=data4[folds!=j,],nvmax=6,method='forward')
+	for(i in 1:6){
+		pred=predict.regsubsets(best.fit,data4[folds==j,],id=i)
+		cv.errors[j,i]=mean((data4$NH4[folds==j]-pred)^2)
+	}
+}
+
+mean.cv.errors=apply(cv.errors,2,mean)
+which.min(mean.cv.errors)
+
+#We see that cross-validation selects an 5-variable model.
+
+regfit.fwd=regsubsets(NH4~.,data=data4,nvmax=5,method="forward")
+regsum=summary(regfit.fwd)
+fwdco=coef(regfit.fwd,5)
+sort(abs(fwdco), decreasing=T)
+
+
+```
+From the result above, we selected a 5-variable model containing Temp, WS, RH, SO2, WD.
+
+ii. Lasso Regression
+```{r,echo=TRUE}
+x=as.matrix(data4[, 1:6])
+cv.lasso <- cv.glmnet(x, y=as.matrix(data4$NH4), family='gaussian', alpha=1, standardize=TRUE, type.measure='mse')
+bestlam=cv.lasso$lambda.min
+lasso.mod=glmnet(x, y=as.matrix(data4$NH4),alpha=1,lambda=0.01,family='gaussian',standardize=TRUE)
+lasso.coef=coef(lasso.mod)[,1]
+lasso.coef[lasso.coef!=0]
+sort(abs(lasso.coef), decreasing=T)
+```
+From the result above, Lasso has selected Temp, WS, RH, SO2, WD, NO2 for us.
+
+
+6. Explorary Data Analysis
+```{r,echo=TRUE}
+corr1 <- cor(data1)
+corrplot(corr1, method = "circle")
+round(corr1,2)
+
+corr2 <- cor(data2)
+corrplot(corr2, method = "circle")
+round(corr2,2)
+
+corr3 <- cor(data3)
+corrplot(corr3, method = "circle")
+round(corr3,2)
+
+corr4 <- cor(data4)
+corrplot(corr4, method = "circle")
+round(corr4,2)
+```
